@@ -27,11 +27,11 @@ O pipeline cria a pasta `output` automaticamente na raiz do projeto. Por lá, te
 
 * bronze.csv`
     * Arquivo contém os dados brutos obtidos pela API.
-* silver.csv 
-    * Arquivo contém os dados tratados
+* silver.csv
+    * Arquivo contém as tintas classificadas nos grupos `tinta_branca`, `tinta_acrilica_branca`, `tinta_acrilica`, `tinta_spray` e `tinta_metalica`, independentemente da unidade de medida.
+    * Um registro pode aparecer mais de uma vez quando corresponde a mais de um grupo. O grupo de cada linha é informado na coluna `grupo`.
 * charts/
     * Pasta contendo os gráficos plotados:
-        * Boxplot dos 10 itens que mais aparecem
-        * Histograma dos preços das tintas
-        * Evolução de preços
-        * Dispersão dos valores
+        * Um boxplot comparando tintas brancas e acrílicas
+        * Um boxplot comparando tintas spray e metálicas em uma escala própria
+        * Um histograma com curva KDE dos preços de venda para cada grupo

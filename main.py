@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from os import path
 from pathlib import Path
 
 from src.api import get_all_items
@@ -14,6 +15,11 @@ RAW_DATA_FILE = OUTPUT_FOLDER / "bronze.csv"
 DATA_FILE = OUTPUT_FOLDER / "silver.csv"
 
 def get_raw_data():
+    if path.exists(RAW_DATA_FILE):
+        print(f"Raw data file {RAW_DATA_FILE} already exists. Skipping data retrieval.")
+
+        return
+
     response = get_all_items()
     response.to_csv(RAW_DATA_FILE)
 

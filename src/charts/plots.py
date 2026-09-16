@@ -1,121 +1,151 @@
-from textwrap import fill
+import math
 
 import matplotlib.pyplot as plt
-from matplotlib.dates import AutoDateLocator, DateFormatter
-from matplotlib.ticker import MaxNLocator
+import seaborn as sns
+from matplotlib.ticker import MultipleLocator, PercentFormatter
 
 
-VALORES = ["valor_declarado", "valor_venda"]
+GRUPOS = {
+    "tinta_branca": {
+        "rotulo": "Tinta branca",
+        "cor": "#4C78A8",
+    },
+    "tinta_acrilica_branca": {
+        "rotulo": "Tinta acrílica branca",
+        "cor": "#F58518",
+    },
+    "tinta_acrilica": {
+        "rotulo": "Tinta acrílica",
+        "cor": "#54A24B",
+    },
+    "tinta_spray": {
+        "rotulo": "Tinta spray",
+        "cor": "#E45756",
+    },
+    "tinta_metalica": {
+        "rotulo": "Tinta metálica",
+        "cor": "#B279A2",
+    },
+}
+
+GRUPOS_TINTAS = (
+    "tinta_branca",
+    "tinta_acrilica_branca",
+    "tinta_acrilica",
+)
+
+GRUPOS_SPRAY_METALICA = (
+    "tinta_spray",
+    "tinta_metalica",
+)
 
 
-def histograma_valor_venda(df):
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    ax.hist(df["valor_venda"].dropna(), bins=5, rwidth=0.85)
-    ax.set(
-        title="Distribuição dos preços de venda",
-        xlabel="Valor de venda (R$)", ylabel="Quantidade de registros",
-    )
-
-    return fig
+def precos_do_grupo(df, grupo):
+    return df.loc[df["grupo"].eq(grupo), "valor_venda"].dropna()
 
 
-def evolucao_preco(df):
-    frequencias = df["descricao"].value_counts()
+def marcacoes_eixo_precos(valor_minimo, valor_maximo, intervalo=5):
+    marcacoes = [valor_minimo]
+    valor = math.ceil(valor_minimo / intervalo) * intervalo
 
-    if frequencias.empty:
-        return None
-
-    descricao = frequencias.index[0]
-    produto = df.loc[df["descricao"].eq(descricao)].dropna(
-        subset=["data_venda", "valor_venda"]
-    )
-
-    if produto.empty:
-        return None
-
-    precos = produto.groupby(produto["data_venda"].dt.normalize())["valor_venda"].median()
-    precos = precos.sort_index().asfreq("D")
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    ax.plot(precos.index, precos, marker="o")
-    ax.set(
-        title=f"Evolução do preço — mediana diária\n{fill(descricao, width=60)}",
-        xlabel="Data (horário de São Paulo)",
-        ylabel="Valor de venda (R$)",
-    )
-
-    ax.xaxis.set_major_locator(AutoDateLocator(tz=precos.index.tz, interval_multiples=False))
-    ax.xaxis.set_major_formatter(DateFormatter("%d/%m/%Y", tz=precos.index.tz))
-
-    fig.autofmt_xdate()
-
-    return fig
-
-
-def dispersao_valores(df):
-    pares = df.dropna(subset=VALORES)
-
-    if pares.empty:
-        return None
-
-    fig, ax = plt.subplots(figsize=(9, 7))
-
-    ax.scatter(pares["valor_declarado"], pares["valor_venda"])
-
-    minimo = pares[VALORES].min().min()
-    maximo = pares[VALORES].max().max()
-
-    ax.plot(
-        [minimo, maximo], [minimo, maximo], "--",
-        label="Valores iguais",
-    )
-
-    ax.set(
-        title="Valor declarado e valor de venda por registro",
-        xlabel="Valor declarado (R$)", ylabel="Valor de venda (R$)",
-    )
-
-    ax.legend()
-
-    return fig
-
-
-def boxplot_por_descricao(df):
-    produtos = df.dropna(subset=["descricao", "valor_venda"])
-    frequencias = produtos["descricao"].value_counts().head(10)
-
-    if frequencias.empty:
-        return None
-
-    linhas = (len(frequencias) + 1) // 2
-
-    fig, eixos = plt.subplots(
-        linhas, 2, figsize=(14, linhas * 2.5 + 1),
-        squeeze=False, layout="constrained",
-    )
-
-    fig.suptitle(
-        "Variação de preço por descrição\n"
-        "Dez descrições mais frequentes · escalas independentes em R$ · todos os extremos visíveis",
-    )
-
-    for ax, (descricao, quantidade) in zip(eixos.flat, frequencias.items()):
-        grupo = produtos.loc[produtos["descricao"].eq(descricao), "valor_venda"]
-
-        ax.boxplot([grupo], tick_labels=[""], orientation="horizontal")
-
-        ax.set_title(fill(descricao, width=53))
-        ax.set_xlabel(
-            f"Valor (R$) · n = {quantidade} · Mediana R$ {grupo.median():.2f}",
+    while valor < valor_maximo:
+        distante_dos_limites = (
+            valor - valor_minimo >= intervalo / 2
+            and valor_maximo - valor >= intervalo / 2
         )
+        if distante_dos_limites:
+            marcacoes.append(valor)
+        valor += intervalo
 
-        ax.xaxis.set_major_locator(MaxNLocator(4))
-        
-        ax.margins(x=0.15)
+    if not math.isclose(valor_minimo, valor_maximo):
+        marcacoes.append(valor_maximo)
 
-    for ax in list(eixos.flat)[len(frequencias):]:
-        ax.set_visible(False)
+    return marcacoes
+
+
+def formata_preco(valor):
+    if math.isclose(valor, round(valor)):
+        return f"{valor:.0f}"
+    return f"{valor:.2f}".replace(".", ",")
+
+
+def boxplot_precos_por_grupos(df, grupos, titulo, intervalo_eixo_x=None):
+    dados = []
+    rotulos = []
+    cores = []
+
+    for grupo in grupos:
+        configuracao = GRUPOS[grupo]
+        precos = precos_do_grupo(df, grupo)
+        if precos.empty:
+            continue
+
+        dados.append(precos)
+        rotulos.append(f"{configuracao['rotulo']} (n={len(precos)})")
+        cores.append(configuracao["cor"])
+
+    if not dados:
+        return None
+
+    fig, ax = plt.subplots(figsize=(11, 7), layout="constrained")
+    elementos = ax.boxplot(
+        dados,
+        tick_labels=rotulos,
+        orientation="horizontal",
+        patch_artist=True,
+        medianprops={"color": "black", "linewidth": 1.5},
+    )
+
+    for caixa, cor in zip(elementos["boxes"], cores):
+        caixa.set_facecolor(cor)
+        caixa.set_alpha(0.75)
+
+    ax.set(
+        title=titulo,
+        xlabel="Valor de venda (R$)",
+        ylabel="Grupo",
+    )
+    ax.invert_yaxis()
+    if intervalo_eixo_x is not None:
+        ax.xaxis.set_major_locator(MultipleLocator(intervalo_eixo_x))
+    ax.grid(axis="x", linestyle=":", alpha=0.4)
+
+    return fig
+
+
+def histograma_kde_por_grupo(df, grupo):
+    precos = precos_do_grupo(df, grupo)
+    if precos.empty:
+        return None
+
+    configuracao = GRUPOS[grupo]
+    valor_minimo = precos.min()
+    valor_maximo = precos.max()
+    marcacoes = marcacoes_eixo_precos(valor_minimo, valor_maximo)
+    largura = min(30, max(10, len(marcacoes) * 0.22))
+
+    fig, ax = plt.subplots(figsize=(largura, 7), layout="constrained")
+    sns.histplot(
+        x=precos,
+        bins="auto",
+        kde=True,
+        stat="percent",
+        color=configuracao["cor"],
+        edgecolor="white",
+        alpha=0.4,
+        kde_kws={"cut": 0, "clip": (valor_minimo, valor_maximo)},
+        line_kws={"linewidth": 2},
+        ax=ax,
+    )
+    ax.set(
+        title=f"Histograma e KDE - {configuracao['rotulo']} (n={len(precos)})",
+        xlabel="Valor de venda (R$)",
+        ylabel="Percentual do grupo (%)",
+    )
+    ax.set_xlim(valor_minimo, valor_maximo)
+    ax.set_xticks(marcacoes, labels=[formata_preco(valor) for valor in marcacoes])
+    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+    ax.grid(axis="y", linestyle=":", alpha=0.4)
 
     return fig
