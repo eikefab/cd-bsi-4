@@ -1,8 +1,11 @@
 import math
 
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
-from matplotlib.ticker import MultipleLocator, PercentFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator, MultipleLocator, PercentFormatter
+
+from ..report import format_currency, format_modes, summarize_prices
 
 
 GRUPOS = {
@@ -42,25 +45,6 @@ GRUPOS_SPRAY_METALICA = (
 
 def precos_do_grupo(df, grupo):
     return df.loc[df["grupo"].eq(grupo), "valor_venda"].dropna()
-
-
-def marcacoes_eixo_precos(valor_minimo, valor_maximo, intervalo=5):
-    marcacoes = [valor_minimo]
-    valor = math.ceil(valor_minimo / intervalo) * intervalo
-
-    while valor < valor_maximo:
-        distante_dos_limites = (
-            valor - valor_minimo >= intervalo / 2
-            and valor_maximo - valor >= intervalo / 2
-        )
-        if distante_dos_limites:
-            marcacoes.append(valor)
-        valor += intervalo
-
-    if not math.isclose(valor_minimo, valor_maximo):
-        marcacoes.append(valor_maximo)
-
-    return marcacoes
 
 
 def formata_preco(valor):
@@ -119,33 +103,73 @@ def histograma_kde_por_grupo(df, grupo):
         return None
 
     configuracao = GRUPOS[grupo]
-    valor_minimo = precos.min()
-    valor_maximo = precos.max()
-    marcacoes = marcacoes_eixo_precos(valor_minimo, valor_maximo)
-    largura = min(30, max(10, len(marcacoes) * 0.22))
+    resumo = summarize_prices(precos)
+    limite = precos.quantile(0.95)
+    precos_centrais = precos[precos <= limite]
+    fora_do_detalhe = len(precos) - len(precos_centrais)
 
-    fig, ax = plt.subplots(figsize=(largura, 7), layout="constrained")
+    fig = plt.figure(figsize=(15, 7), layout="constrained")
+    grade = fig.add_gridspec(2, 2, height_ratios=(6, 1))
+    ax_completo = fig.add_subplot(grade[0, 0])
+    ax_detalhe = fig.add_subplot(grade[0, 1])
+    ax_tabela = fig.add_subplot(grade[1, :])
+    fig.suptitle(f"Distribuição dos preços — {configuracao['rotulo']} (n={len(precos)})")
+
     sns.histplot(
         x=precos,
         bins="auto",
-        kde=True,
+        kde=precos.nunique() > 1,
         stat="percent",
         color=configuracao["cor"],
         edgecolor="white",
-        alpha=0.4,
-        kde_kws={"cut": 0, "clip": (valor_minimo, valor_maximo)},
+        alpha=0.5,
+        kde_kws={"cut": 0, "clip": (precos.min(), precos.max())},
         line_kws={"linewidth": 2},
-        ax=ax,
+        ax=ax_completo,
     )
-    ax.set(
-        title=f"Histograma e KDE - {configuracao['rotulo']} (n={len(precos)})",
-        xlabel="Valor de venda (R$)",
-        ylabel="Percentual do grupo (%)",
+    ax_detalhe.hist(
+        precos_centrais,
+        bins=np.histogram_bin_edges(precos_centrais, bins="auto"),
+        weights=np.full(len(precos_centrais), 100 / len(precos)),
+        color=configuracao["cor"],
+        edgecolor="white",
+        alpha=0.7,
     )
-    ax.set_xlim(valor_minimo, valor_maximo)
-    ax.set_xticks(marcacoes, labels=[formata_preco(valor) for valor in marcacoes])
-    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
-    ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
-    ax.grid(axis="y", linestyle=":", alpha=0.4)
+    if not math.isclose(precos.min(), limite):
+        ax_detalhe.set_xlim(precos.min(), limite)
+
+    for ax in (ax_completo, ax_detalhe):
+        ax.set(xlabel="Valor de venda (R$)", ylabel="Percentual do grupo (%)")
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=7))
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda valor, _: formata_preco(valor)))
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100))
+        ax.grid(axis="y", linestyle=":", alpha=0.4)
+
+    ax_completo.set_title("Visão completa")
+    ax_detalhe.set_title(
+        f"Detalhe até P95 ({format_currency(limite)}) — "
+        f"{fora_do_detalhe} registro(s) acima"
+    )
+
+    ax_tabela.axis("off")
+    tabela = ax_tabela.table(
+        cellText=[[
+            format_currency(resumo["mean"]),
+            format_currency(resumo["median"]),
+            format_modes(resumo),
+        ]],
+        colLabels=[
+            "Média",
+            "Mediana",
+            f"Moda (frequência: {resumo['frequency']})" if resumo["modes"] else "Moda",
+        ],
+        cellLoc="center",
+        loc="center",
+        bbox=(0.08, 0.02, 0.84, 0.96),
+    )
+    tabela.auto_set_font_size(False)
+    tabela.set_fontsize(10)
+    for cell in tabela.get_celld().values():
+        cell.get_text().set_parse_math(False)
 
     return fig

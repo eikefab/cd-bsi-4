@@ -27,6 +27,7 @@ O pipeline cria a pasta `output` automaticamente na raiz do projeto. Por lá, te
 
 * bronze.csv
     * Arquivo contém os dados brutos obtidos pela API.
+    * Se já existir, será reutilizado. Para uma nova coleta, remova esse arquivo antes de executar o script.
 * silver.csv
     * Arquivo contém as tintas classificadas nos grupos `tinta_branca`, `tinta_acrilica_branca`, `tinta_acrilica`, `tinta_spray` e `tinta_metalica`, independentemente da unidade de medida.
     * Um registro pode aparecer mais de uma vez quando corresponde a mais de um grupo. O grupo de cada linha é informado na coluna `grupo`.
@@ -34,7 +35,36 @@ O pipeline cria a pasta `output` automaticamente na raiz do projeto. Por lá, te
     * Pasta contendo os gráficos plotados:
         * Um boxplot comparando tintas brancas e acrílicas
         * Um boxplot comparando tintas spray e metálicas em uma escala própria
-        * Um histograma com curva KDE dos preços de venda para cada grupo
+        * Um histograma de cada grupo com visão completa, detalhe até o percentil 95 e tabela de média, mediana e moda
+
+## Resultado mostrado no terminal
+
+Ao executar `uv run main.py`, o programa informa se usou o `bronze.csv` em cache ou coletou dados da API, o período das vendas, as quantidades em cada etapa, os motivos das exclusões, a contagem por grupo e os arquivos gerados. A mensagem de conclusão só aparece depois de salvar os gráficos.
+
+**Retrato do cache atual:** vendas de 09/09/2026 a 15/09/2026. A coleta que criou este arquivo usava uma versão que deixava a última página da API de fora; portanto, os números abaixo podem não representar todas as vendas daquele período. A correção da paginação será aplicada quando o bronze for coletado novamente.
+
+| Etapa | Registros |
+|---|---:|
+| Bronze | 2.600 |
+| Excluídos por descrição (`tecido`, `coador`, `promocao`) | 30 |
+| Sem correspondência com os cinco grupos | 749 |
+| Registros classificados em pelo menos um grupo | 1.821 |
+| Linhas no silver, contando grupos sobrepostos | 2.807 |
+
+Antes de classificar, o ETL consolida descrições por `descricao_sefaz` e `codigo`, aplica maiúsculas, remove alguns sinais gráficos e padroniza unidades equivalentes (`UND`/`UNID` para `UN`; `LT`/`LITRO` para `L`).
+
+As estatísticas usam `valor_venda` por registro de venda. Média e mediana são calculadas com os valores originais. Para a moda, os preços são agrupados em centavos; em caso de empate, todos os valores modais são exibidos. A frequência indica quantas vezes cada moda aparece.
+
+| Conjunto | n | Média | Mediana | Moda | Frequência |
+|---|---:|---:|---:|---:|---:|
+| Bronze | 2.600 | R$ 107,15 | R$ 62,70 | R$ 20,00 | 37 |
+| Tinta branca | 823 | R$ 125,23 | R$ 95,78 | R$ 100,00 | 16 |
+| Tinta acrílica branca | 388 | R$ 164,78 | R$ 119,00 | R$ 89,90; R$ 109,90 | 10 |
+| Tinta acrílica | 898 | R$ 174,95 | R$ 128,70 | R$ 89,90 | 17 |
+| Tinta spray | 552 | R$ 24,66 | R$ 21,88 | R$ 20,00 | 33 |
+| Tinta metálica | 146 | R$ 27,74 | R$ 25,49 | R$ 25,49 | 17 |
+
+Os grupos se sobrepõem, então suas quantidades não devem ser somadas para contar vendas únicas. Os preços incluem unidades de medida e tamanhos de embalagem diferentes e não foram convertidos para preço por litro ou por unidade. Cada histograma mantém a distribuição completa e amplia a faixa até o percentil 95; o painel ampliado informa quantos registros ficaram acima desse limite, e ambos os painéis usam o total do grupo como base para os percentuais.
 
 ## Análise exploratória
 

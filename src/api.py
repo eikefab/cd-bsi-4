@@ -1,4 +1,4 @@
-from .models import SefazResponse, Product
+from .models import SefazResponse
 
 import requests
 import os
@@ -47,23 +47,29 @@ def get_items():
     return SefazResponse(search())
 
 def get_all_items(limit=None):
+    if limit is not None and limit < 1:
+        raise ValueError("O limite de páginas deve ser positivo.")
+
     response = SefazResponse(search())
-    items = []  
+    items = []
 
-    while not response.ultima_pagina:
-        print(f"Página {response.pagina_atual} de {response.total_registros // response.registros_por_pagina + 1} (qtd.: {response.total_registros}) [{len(items)}]")
-
+    while True:
         items.extend(response.produtos)
+        ultima_pagina = response.ultima_pagina or (
+            limit is not None and response.pagina_atual >= limit
+        )
+        if response.pagina_atual == 1 or response.pagina_atual % 10 == 0 or ultima_pagina:
+            print(
+                f"Coleta: página {response.pagina_atual}/{response.total_paginas} "
+                f"— {len(items)} registros recebidos"
+            )
 
-        if limit is not None and response.pagina_atual == limit:
+        if ultima_pagina:
             break
 
         query = search(page=response.pagina_atual + 1)
         response = SefazResponse(query)
 
-    print("Processamento finalizado.")
-
     response.produtos = items
 
     return response
-    

@@ -32,10 +32,12 @@ COLUNAS_SAIDA = [
 ]
 
 
-def transform_data(csv_file):
-    df = pd.read_csv(csv_file)
+def transform_data(csv_file, return_audit=False):
+    df = pd.read_csv(csv_file, dtype={"codigo": "string"})
+    raw_rows = len(df)
 
     df = df.dropna(how="all")
+    blank_rows = raw_rows - len(df)
 
     df = normaliza_descricao_por_campo(df, "descricao_sefaz")
     df = normaliza_descricao_por_campo(df, "codigo")
@@ -49,19 +51,39 @@ def transform_data(csv_file):
     )
 
     df["unidade_medida"] = df["unidade_medida"].replace(UNIDADES_PADRONIZADAS)
+    duplicate_rows = int(df.duplicated().sum())
     df = df.drop_duplicates()
 
     bad_words = ["tecidos", "tecido", "coador", "promocao", "promoçao", "promoção"]
+    excluded_counts = {}
     for word in bad_words:
-        df = df[~df["descricao"].str.contains(word, case=False, na=False)]
+        excluded = df["descricao"].str.contains(word, case=False, na=False)
+        excluded_counts[word] = int(excluded.sum())
+        df = df[~excluded]
 
+    candidates = len(df)
     df = agrupa_tintas(df)
+    classified_rows = df.index.nunique()
+    group_counts = df["grupo"].value_counts().to_dict()
 
     df = df.drop(columns=["descricao_sefaz", "gtin", "ncm", "gpc"])
     df = df[COLUNAS_SAIDA]
     df = df.sort_values(by=["descricao", "grupo"], kind="stable")
 
-    return df.reset_index(drop=True)
+    result = df.reset_index(drop=True)
+    if not return_audit:
+        return result
+
+    audit = {
+        "raw_rows": raw_rows,
+        "blank_rows": blank_rows,
+        "duplicate_rows": duplicate_rows,
+        "excluded_counts": excluded_counts,
+        "unclassified_rows": candidates - classified_rows,
+        "classified_rows": classified_rows,
+        "group_counts": group_counts,
+    }
+    return result, audit
 
 
 def agrupa_tintas(df):
@@ -91,14 +113,13 @@ def agrupa_tintas(df):
         ("tinta_spray", tinta_spray),
         ("tinta_metalica", tinta_metalica),
     ]
-
     dataframes = []
     for nome, mascara in grupos:
         grupo = df.loc[mascara].copy()
         grupo["grupo"] = nome
         dataframes.append(grupo)
 
-    return pd.concat(dataframes, ignore_index=True)
+    return pd.concat(dataframes)
 
 
 def normaliza_descricao_por_campo(df, campo):
